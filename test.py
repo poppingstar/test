@@ -65,7 +65,7 @@ class Trainer():  #네트워크 및 훈련을 위한 객체
   def calc_accuracy(self,pred,label): #accuracy 계산
     _,top1=torch.max(pred,1)
     correct=(top1==label).sum().item()
-    acc=correct/label.size(0)
+    acc=correct/label.size(0) 
     return acc*100
 
   def _fit(self): #에폭 하나를 훈련하는 함수
@@ -115,10 +115,10 @@ class Trainer():  #네트워크 및 훈련을 위한 객체
       #valid loss 계산
       val_loss, val_acc=self._valid()
       graph.update(epoch,val_loss,val_acc)  #그래프 업데이트
+      graph.save(save_dir,'graph.png',replace=True)
       
       if epoch%save_point==0: #세이브 포인트에 도달하면 저장
         self.save_param(save_dir,f'weights_{epoch}.pth',True)
-        graph.save(save_dir,'graph.png',True)
         # torch.save(self.model.state_dict(), os.path.join(save_dir, f'weights_{epoch}.pth'))
       
       #early stopping
@@ -135,7 +135,7 @@ class Trainer():  #네트워크 및 훈련을 위한 객체
       duration=time.time()-st
       total_time+=duration  #한 에폭의 소요 시간 계산
       
-      print(f'Epoch{epoch+1}/{total_epochs}, Train Loss: {train_loss:.2f}, Validation Loss: {val_loss:.2f},  Minimun Loss: {minimum_loss:.2f},'
+      print(f'Epoch{epoch+1}/{total_epochs}, Train Loss: {train_loss:.2f}, Validation Loss: {val_loss:.2f}, Minimun Loss: {minimum_loss:.2f}, '
              f'Validation Accuracy: {val_acc:.2f}, Duration: {duration:,.0f}, total_time: {total_time:,.0f}')  #에폭마다 결과 출력
 
   def test(self): #테스트 함수
@@ -163,9 +163,9 @@ class Trainer():  #네트워크 및 훈련을 위한 객체
     return top1_accuracy,top5_accuracy  
   
   def set_data_loaders(self,datasets):  #각각의 데이터 로더 설정
-    self.train_loader=torch.utils.data.DataLoader(datasets[0], self.hyper.batch, shuffle=False, pin_memory=True, num_workers=0, drop_last=True)
-    self.valid_loader=torch.utils.data.DataLoader(datasets[1], self.hyper.batch, shuffle=False, pin_memory=True, num_workers=0, drop_last=True)
-    self.test_loader=torch.utils.data.DataLoader(datasets[2], self.hyper.batch, shuffle=False, pin_memory=True, num_workers=0, drop_last=True)
+    self.train_loader=torch.utils.data.DataLoader(datasets[0], self.hyper.batch, shuffle=True, pin_memory=True, num_workers=8, drop_last=True)  #문제시 셔플 끄기
+    self.valid_loader=torch.utils.data.DataLoader(datasets[1], self.hyper.batch, shuffle=True, pin_memory=True, num_workers=8, drop_last=True)  #
+    self.test_loader=torch.utils.data.DataLoader(datasets[2], self.hyper.batch, shuffle=True, pin_memory=True, num_workers=8, drop_last=True)
 
   def get_hyper(self):
     return self.hyper #메타 데이터 클래스 반환
@@ -235,22 +235,18 @@ class ValidGraph: #그래프 클래스
       save_path=no_overwrite(save_path) #파일을 덮어쓰는것을 방지
     plt.savefig(save_path)
 
-def create_transfrom(imagenet_norm=True,*args): #개별 transform을 생성하는 함수
+def create_transfrom(*args): #개별 transform을 생성하는 함수
   transforms=[*args]  
 
   if not any(isinstance(transform, torchvision.transforms.ToTensor) for transform in transforms): #To Tensor 클래스가 없다면 추가
     transforms.append(torchvision.transforms.ToTensor())
 
-  if imagenet_norm: #이미지넷 기반의 정규화 적용
-    imagenet_norm=torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    transforms.append(imagenet_norm)
-
   return torchvision.transforms.Compose(transforms) #데이터 전처리를 일괄 처리
 
-def create_transforms(imagenet_norm=True,*,train,valid,test): #transform을 한번에 생성 하는 함수
-  train_transform=create_transfrom(imagenet_norm,*train)  
-  valid_transform=create_transfrom(imagenet_norm,*valid)
-  test_transform=create_transfrom(imagenet_norm,*test)
+def create_transforms(*,train,valid,test): #transform을 한번에 생성 하는 함수
+  train_transform=create_transfrom(*train)  
+  valid_transform=create_transfrom(*valid)
+  test_transform=create_transfrom(*test)
 
   transforms=collections.namedtuple('datasets', 'train valid test')(train_transform,valid_transform,test_transform) #각 데이터 셋을 네임드 튜플에 담아 반환, 그냥 네임드 튜플 써보고 싶었어요
 
@@ -360,9 +356,9 @@ if __name__=='__main__':  #메인 함수
     efficient_meta=Hyper('EfficientNet',227,256,batch)
 
     #훈련할 모델 튜플
-    models2train=(alexNet:=Trainer(alexNet,loss_func,alexnet_meta),
+    models2train=(#alexNet:=Trainer(alexNet,loss_func,alexnet_meta),
                   # resNet152:=Trainer(resNet152, loss_func,resnet_meta),
-                  # inceptionNet:=InceptionTrainer(inceptionNet, loss_func,inception_meta),
+                  inceptionNet:=InceptionTrainer(inceptionNet, loss_func,inception_meta),
                   # efficientNet_b6:=Trainer(efficientNet_b6,loss_func,efficient_meta),
                   )
 
@@ -380,21 +376,20 @@ if __name__=='__main__':  #메인 함수
         i+=1
 
       #훈련 전처리 정의
-      train=(torchvision.transforms.Resize(meta.resize),  
-              torchvision.transforms.RandomResizedCrop(meta.inplace),
-              torchvision.transforms.RandomHorizontalFlip(),
-              torchvision.transforms.ToTensor(),
-              Pca())
+
+      transforms={
+      'train':(torchvision.transforms.Resize((meta.resize,meta.resize)),  
+              torchvision.transforms.RandomHorizontalFlip(0.05),
+              torchvision.transforms.ToTensor()),
       #테스트 전처리 정의
-      test=(torchvision.transforms.Resize(meta.resize), 
-            torchvision.transforms.FiveCrop(meta.inplace),
-            torchvision.transforms.Lambda(lambda crops: crops+[torchvision.transforms.RandomHorizontalFlip(1)(crop)for crop in crops]),
+      'test':(torchvision.transforms.Resize((meta.resize,meta.resize)), 
             torchvision.transforms.ToTensor())
+      }
 
       torch.cuda.empty_cache()  #GPU 메모리 정리
       model.set_optimizer(torch.optim.Adam)  #옵티마이저 설정
-      transforms=create_transforms(train=train,valid=train,test=test) 
-      datasets=create_datasets(img_dir,(train_list,train_list,test_list),transforms) #각 데이터 셋 생성
+      transforms=create_transforms(train=transforms['train'],valid=transforms['test'],test=transforms['test']) 
+      datasets=create_datasets(img_dir,(train_list,train_list,test_list),transforms,split=0.2) #각 데이터 셋 생성
       model.set_data_loaders(datasets)    #데이터로더 설정
 
       print(meta.name)  #어떤 모델이 돌아가는지 확인하기 위해 출력

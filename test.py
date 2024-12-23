@@ -1,3 +1,4 @@
+class FoodSpottingDataset(torch.utils.data.Dataset):  #데이터 셋 클래스 선언
   def __init__(self,image_dir,labels_file,transform,start=0,end=1):
     self.image_dir=image_dir  #이미지 폴더 경로
     self.transform=transform  #transform 객체
@@ -17,3 +18,17 @@
       self.labels=[(item, i)
                   for i in d 
                   for item in d[i][int(len(d[i])*start):int(len(d[i])*end)]]  #이미지 ID와 클래스 번호를 저장
+
+  def __len__(self):	#인스턴스를 len의 인자로 인스턴스를 전달할 떄 
+    return len(self.labels)	#레이블 배열의 길이 반환
+
+  def __getitem__(self, idx):	#이터러블로 정의
+    image_id, label = self.labels[idx]	#레이블의 인덱스를 순회하며 이미지 ID와 클래스 번호 가져옴
+    # 이미지 경로 생성
+    image_path = os.path.join(self.image_dir, list(self.label_map.keys())[label], f"{image_id}.jpg")	#이미지/레이블/개별_이미지에 접근
+    image = Image.open(image_path).convert("RGB")	#이미지를 읽어오며 RGB로 변환
+    
+    if self.transform: #transform이 있다면
+      image = self.transform(image) #이미지에 적용한다
+    
+    return image, torch.tensor(label, dtype=torch.long) #이미지와 텐서로 복사된 레이블을 반환
